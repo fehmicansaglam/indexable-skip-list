@@ -1,6 +1,5 @@
 package net.fehmicansaglam.collection;
 
-import java.security.SecureRandom;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.Objects;
@@ -8,13 +7,15 @@ import java.util.Random;
 
 public class IndexableSkipList<T extends Comparable<T>> {
 
-    static class Node<T extends Comparable<T>> {
+    private class Node {
         public final T value;
-        private Node<T> right;
-        private Node<T> bottom;
+        private Node right;
+        private Node bottom;
+        private int distance;
 
         Node(T value) {
             this.value = value;
+            this.distance = 0;
         }
 
         @Override
@@ -27,10 +28,22 @@ public class IndexableSkipList<T extends Comparable<T>> {
         }
     }
 
+    private class NodeDistance {
+        public final Node node;
+        public final int distance;
+
+        public NodeDistance(Node node, int distance) {
+            this.node = node;
+            this.distance = distance;
+        }
+    }
+
     /**
      * Head is the top left node which is the entry point of this skip list.
      */
-    private Node<T> head;
+    private Node head;
+
+    public int size;
 
     /**
      * The very bottom level is 0. This number represents the top level.
@@ -43,8 +56,9 @@ public class IndexableSkipList<T extends Comparable<T>> {
     private Random random;
 
     public IndexableSkipList() {
-        this.head = new Node<>(null);
-        this.random = new SecureRandom();
+        this.head = new Node(null);
+        this.size = 0;
+        this.random = new Random();
         this.currLevel = 0;
     }
 
@@ -54,7 +68,9 @@ public class IndexableSkipList<T extends Comparable<T>> {
 
         if (levels > this.currLevel) {
             for (int i = levels; i > this.currLevel; --i) {
-                Node<T> newHead = new Node<>(null);
+                Node newHead = new Node(null);
+                newHead.distance = this.size;
+                System.out.println("Head distance: " + newHead.distance);
                 newHead.bottom = this.head;
                 this.head = newHead;
             }
@@ -68,15 +84,19 @@ public class IndexableSkipList<T extends Comparable<T>> {
     /**
      * Finds the path to the node containing the value or the nearest value.
      */
-    private Deque<Node<T>> find(final T value) {
-        final Deque<Node<T>> nodes = new LinkedList<>();
+    private Deque<NodeDistance> find(final T value) {
+        final Deque<NodeDistance> nodes = new LinkedList<>();
 
-        Node<T> curr = head;
+        Node curr = head;
 
         while (curr != null) {
-            while (curr.right != null && curr.right.value.compareTo(value) <= 0) curr = curr.right;
+            int distance = 0;
+            while (curr.right != null && curr.right.value.compareTo(value) <= 0) {
+                distance += curr.distance;
+                curr = curr.right;
+            }
 
-            nodes.push(curr);
+            nodes.push(new NodeDistance(curr, distance));
 
             if (Objects.equals(curr.value, value)) {
                 return nodes;
@@ -88,6 +108,11 @@ public class IndexableSkipList<T extends Comparable<T>> {
         return nodes;
     }
 
+    public T closest(final T value) {
+        final NodeDistance nodeDistance = find(value).peek();
+        return nodeDistance == null ? null : nodeDistance.node.value;
+    }
+
     public boolean insert(T value) {
         if (contains(value)) {
             return false;
@@ -95,26 +120,42 @@ public class IndexableSkipList<T extends Comparable<T>> {
 
         int levels = ensureLevels();
 
-        System.out.println(this.currLevel);
+//        System.out.println(this.currLevel);
 
-        Deque<Node<T>> nodes = find(value);
+        Deque<NodeDistance> nodes = find(value);
 
-        Node<T> bottom = null;
+        Node bottom = null;
+        int prevLevelDist = 0;
         for (int i = 0; i <= levels; i++) {
-            Node<T> node = nodes.pop();
-            Node<T> newNode = new Node<>(value);
-            newNode.right = node.right;
+            NodeDistance nodeDistance = nodes.pop();
+
+            Node newNode = new Node(value);
+            newNode.right = nodeDistance.node.right;
             newNode.bottom = bottom;
-            node.right = newNode;
+
+            nodeDistance.node.right = newNode;
+            int oldDistance = nodeDistance.node.distance;
+            System.out.println("prev dist:" + prevLevelDist);
+            nodeDistance.node.distance = prevLevelDist + 1;
+            newNode.distance = (oldDistance - prevLevelDist);
+            prevLevelDist += nodeDistance.distance;
             bottom = newNode;
         }
+
+        while (!nodes.isEmpty()) {
+            NodeDistance nodeDistance = nodes.pop();
+            System.out.println("Incrementing " + nodeDistance.node.value);
+            nodeDistance.node.distance++;
+        }
+
+        this.size++;
 
         return true;
     }
 
     public boolean contains(T value) {
-        Node node = find(value).peek();
-        return node != null && Objects.equals(node.value, value);
+        NodeDistance nodeDistance = find(value).peek();
+        return nodeDistance != null && Objects.equals(nodeDistance.node.value, value);
     }
 
     @Override
@@ -124,10 +165,14 @@ public class IndexableSkipList<T extends Comparable<T>> {
         StringBuilder builder = new StringBuilder();
 
         while (head != null) {
-            builder.append("HEAD ");
+            builder.append("HEAD");
+            for (int i = 0; i < head.distance; i++)
+                builder.append("\t");
             Node curr = head.right;
             while (curr != null) {
-                builder.append(curr.value).append(" ");
+                builder.append(curr.value);
+                for (int i = 0; i < curr.distance; i++)
+                    builder.append("\t");
                 curr = curr.right;
             }
             builder.append("\n");
@@ -136,5 +181,5 @@ public class IndexableSkipList<T extends Comparable<T>> {
 
         return builder.toString();
     }
-    
+
 }
